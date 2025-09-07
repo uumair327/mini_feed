@@ -7,6 +7,7 @@ abstract class PostDetailsEvent extends Equatable {
   List<Object?> get props => [];
 }
 
+/// Event to request post details and comments
 class PostDetailsRequested extends PostDetailsEvent {
   final int postId;
   final bool forceRefresh;
@@ -20,15 +21,40 @@ class PostDetailsRequested extends PostDetailsEvent {
   List<Object?> get props => [postId, forceRefresh];
 }
 
-class PostDetailsFavoriteToggled extends PostDetailsEvent {
+/// Event to toggle favorite status of the post
+class FavoriteToggled extends PostDetailsEvent {
   final int postId;
   final bool isFavorite;
 
-  const PostDetailsFavoriteToggled({
+  const FavoriteToggled({
     required this.postId,
     required this.isFavorite,
   });
 
   @override
   List<Object?> get props => [postId, isFavorite];
+}
+
+/// Event to retry loading post details after an error
+class PostDetailsRetryRequested extends PostDetailsEvent {
+  final int postId;
+
+  const PostDetailsRetryRequested({
+    required this.postId,
+  });
+
+  @override
+  List<Object?> get props => [postId];
+}
+
+/// Event to refresh post details and comments
+class PostDetailsRefreshed extends PostDetailsEvent {
+  final int postId;
+
+  const PostDetailsRefreshed({
+    required this.postId,
+  });
+
+  @override
+  List<Object?> get props => [postId];
 }

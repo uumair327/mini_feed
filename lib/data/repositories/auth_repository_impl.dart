@@ -1,17 +1,29 @@
-import 'package:mini_feed/core/errors/failures.dart';
-import 'package:mini_feed/core/utils/result.dart';
-import 'package:mini_feed/data/datasources/local/auth_local_datasource.dart';
-import 'package:mini_feed/data/datasources/remote/auth_remote_datasource.dart';
-import 'package:mini_feed/domain/entities/user.dart';
-import 'package:mini_feed/domain/repositories/auth_repository.dart';
+import '../../core/network/network_info.dart';
+import '../../core/storage/storage_service.dart';
+import '../../core/storage/token_storage.dart';
+import '../../core/utils/result.dart';
+import '../../core/errors/failures.dart';
+import '../../core/errors/exceptions.dart';
+import '../../domain/entities/user.dart';
+import '../../domain/repositories/auth_repository.dart';
+import '../datasources/remote/auth_remote_datasource.dart';
+import '../models/user_model.dart';
 
+/// Implementation of AuthRepository
+/// 
+/// Handles authentication operations by coordinating between remote and local data sources.
+/// Implements offline-first approach with proper error handling and token management.
 class AuthRepositoryImpl implements AuthRepository {
   final AuthRemoteDataSource remoteDataSource;
-  final AuthLocalDataSource localDataSource;
+  final StorageService storageService;
+  final TokenStorage tokenStorage;
+  final NetworkInfo networkInfo;
 
-  AuthRepositoryImpl({
+  const AuthRepositoryImpl({
     required this.remoteDataSource,
-    required this.localDataSource,
+    required this.storageService,
+    required this.tokenStorage,
+    required this.networkInfo,
   });
 
   @override
@@ -20,77 +32,232 @@ class AuthRepositoryImpl implements AuthRepository {
     required String password,
   }) async {
     try {
-      final result = await remoteDataSource.login(email: email, password: password);
-      await localDataSource.saveUser(result.user);
-      await localDataSource.saveToken(result.token);
-      return Result.success(result.user.toEntity());
+      // Check network connectivity
+      if (!await networkInfo.isConnected) {
+        return failure(const NetworkFailure('No internet connection'));
+      }
+
+      // Attempt login with remote data source
+      final loginResult = await remoteDataSource.login(
+        email: email,
+        password: password,
+      );
+
+      if (loginResult.isFailure) {
+        return failure(loginResult.failureValue!);
+      }
+
+      final loginResponse = loginResult.successValue!;
+
+      // Store authentication data locally
+      await _storeAuthData(loginResponse);
+
+      return success(loginResponse.toDomain());
+    } on ServerException catch (e) {
+      return failure(ServerFailure(e.message, e.statusCode));
+    } on NetworkException catch (e) {
+      return failure(NetworkFailure(e.message));
+    } on AuthException catch (e) {
+      return failure(AuthFailure(e.message));
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(ServerFailure('Login failed', e.toString()));
+      return failure(UnexpectedFailure('Login failed: $e'));
     }
   }
 
   @override
   Future<Result<void>> logout() async {
     try {
-      await localDataSource.clearToken();
-      await localDataSource.clearUser();
-      return Result.success(null);
+      // Clear all authentication data from local storage
+      await _clearAuthData();
+      return success(null);
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(CacheFailure('Logout failed', e.toString()));
-    }
-  }
-
-  @override
-  Future<Result<User?>> getCurrentUser() async {
-    try {
-      final user = await localDataSource.getUser();
-      return Result.success(user?.toEntity());
-    } catch (e) {
-      return Result.failure(CacheFailure('Failed to get current user', e.toString()));
-    }
-  }
-
-  @override
-  Future<Result<bool>> isAuthenticated() async {
-    try {
-      final token = await localDataSource.getToken();
-      return Result.success(token != null && token.isNotEmpty);
-    } catch (e) {
-      return Result.failure(CacheFailure('Failed to check authentication', e.toString()));
+      return failure(UnexpectedFailure('Logout failed: $e'));
     }
   }
 
   @override
   Future<Result<String?>> getStoredToken() async {
     try {
-      final token = await localDataSource.getToken();
-      return Result.success(token);
+      final token = await tokenStorage.getToken();
+      return success(token);
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(CacheFailure('Failed to get stored token', e.toString()));
+      return failure(UnexpectedFailure('Failed to get stored token: $e'));
     }
   }
 
   @override
-  Future<Result<bool>> validateToken(String token) async {
+  Future<Result<bool>> isAuthenticated() async {
     try {
-      // For demo purposes, assume token is valid if not empty
-      return Result.success(token.isNotEmpty);
+      final hasToken = await tokenStorage.hasToken();
+      if (!hasToken) {
+        return success(false);
+      }
+
+      // Check if token is expired (if TokenStorage supports it)
+      if (tokenStorage is TokenStorageImpl) {
+        final isExpired = await (tokenStorage as TokenStorageImpl).isTokenExpired();
+        if (isExpired) {
+          return success(false);
+        }
+      }
+
+      return success(true);
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(ServerFailure('Token validation failed', e.toString()));
+      return failure(UnexpectedFailure('Failed to check authentication status: $e'));
+    }
+  }
+
+  @override
+  Future<Result<User?>> getCurrentUser() async {
+    try {
+      // First check if user is authenticated
+      final authResult = await isAuthenticated();
+      if (authResult.isFailure) {
+        return failure(authResult.failureValue!);
+      }
+
+      if (!authResult.successValue!) {
+        return success(null);
+      }
+
+      // Get user profile from local storage
+      final userJson = await storageService.get<String>('user_profile');
+      if (userJson == null) {
+        return success(null);
+      }
+
+      final userModel = UserModel.fromJsonString(userJson);
+
+      // Get the stored token and add it to the user
+      final tokenResult = await getStoredToken();
+      if (tokenResult.isFailure) {
+        return failure(tokenResult.failureValue!);
+      }
+
+      final user = userModel.toDomain().copyWith(token: tokenResult.successValue);
+      return success(user);
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
+    } catch (e) {
+      return failure(UnexpectedFailure('Failed to get current user: $e'));
     }
   }
 
   @override
   Future<Result<User>> refreshToken() async {
     try {
-      final currentUser = await localDataSource.getUser();
-      if (currentUser == null) {
-        return Result.failure(AuthFailure('No user found', 'User not logged in'));
+      // Check if we have a refresh token
+      final refreshToken = await tokenStorage.getRefreshToken();
+      if (refreshToken == null) {
+        return failure(const AuthFailure('No refresh token available'));
       }
-      // For demo purposes, return current user
-      return Result.success(currentUser.toEntity());
+
+      // Check network connectivity
+      if (!await networkInfo.isConnected) {
+        return failure(const NetworkFailure('No internet connection'));
+      }
+
+      // Note: reqres.in doesn't support refresh tokens, so this is a placeholder
+      // In a real app, you would call the refresh token endpoint here
+      return failure(const AuthFailure('Token refresh not supported by API'));
+    } on NetworkException catch (e) {
+      return failure(NetworkFailure(e.message));
+    } on AuthException catch (e) {
+      return failure(AuthFailure(e.message));
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(ServerFailure('Token refresh failed', e.toString()));
+      return failure(UnexpectedFailure('Token refresh failed: $e'));
+    }
+  }
+
+  @override
+  Future<Result<bool>> validateToken() async {
+    try {
+      // Get stored token
+      final tokenResult = await getStoredToken();
+      if (tokenResult.isFailure) {
+        return failure(tokenResult.failureValue!);
+      }
+
+      final token = tokenResult.successValue;
+      if (token == null) {
+        return success(false);
+      }
+
+      // Check if token is expired locally first
+      if (tokenStorage is TokenStorageImpl) {
+        final isExpired = await (tokenStorage as TokenStorageImpl).isTokenExpired();
+        if (isExpired) {
+          return success(false);
+        }
+      }
+
+      // Check network connectivity
+      if (!await networkInfo.isConnected) {
+        // If offline, assume token is valid if it exists and isn't expired locally
+        return success(true);
+      }
+
+      // Note: reqres.in doesn't have a token validation endpoint
+      // In a real app, you would make a request to validate the token here
+      // For now, we'll just check if we have a token and it's not expired
+      return success(true);
+    } on NetworkException catch (e) {
+      return failure(NetworkFailure(e.message));
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
+    } catch (e) {
+      return failure(UnexpectedFailure('Token validation failed: $e'));
+    }
+  }
+
+  /// Helper method to store authentication data
+  Future<void> _storeAuthData(dynamic loginResponse) async {
+    try {
+      // Store tokens
+      await tokenStorage.storeToken(loginResponse.token);
+      if (loginResponse.refreshToken != null) {
+        await tokenStorage.storeRefreshToken(loginResponse.refreshToken!);
+      }
+
+      // Store user profile
+      await storageService.store('user_profile', loginResponse.user.toJsonString());
+
+      // Store authentication state
+      await storageService.store('is_authenticated', true);
+
+      // Store login time
+      await storageService.store('last_login_time', DateTime.now().millisecondsSinceEpoch);
+    } catch (e) {
+      throw CacheException('Failed to store auth data: $e');
+    }
+  }
+
+  /// Helper method to clear authentication data
+  Future<void> _clearAuthData() async {
+    try {
+      // Clear tokens
+      await tokenStorage.clearAllTokens();
+
+      // Clear user profile
+      await storageService.delete('user_profile');
+
+      // Clear authentication state
+      await storageService.delete('is_authenticated');
+
+      // Clear login time
+      await storageService.delete('last_login_time');
+    } catch (e) {
+      throw CacheException('Failed to clear auth data: $e');
     }
   }
 }

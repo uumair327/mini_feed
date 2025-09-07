@@ -38,6 +38,9 @@ dependencies:
   # State Management
   flutter_bloc: ^8.1.6
   equatable: ^2.0.5
+  
+  # Dependency injection
+  get_it: ^7.6.4
 
   # Networking
   dio: ^5.7.0

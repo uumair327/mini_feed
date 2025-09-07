@@ -1,42 +1,78 @@
-import 'package:mini_feed/core/errors/failures.dart';
-import 'package:mini_feed/core/utils/result.dart';
-import 'package:mini_feed/data/datasources/local/post_local_datasource.dart';
-import 'package:mini_feed/data/datasources/remote/post_remote_datasource.dart';
-import 'package:mini_feed/domain/entities/comment.dart';
-import 'package:mini_feed/domain/entities/post.dart';
-import 'package:mini_feed/domain/repositories/post_repository.dart';
+import '../../core/network/network_info.dart';
+import '../../core/storage/storage_service.dart';
+import '../../core/utils/result.dart';
+import '../../core/errors/failures.dart';
+import '../../core/errors/exceptions.dart';
+import '../../domain/entities/post.dart';
+import '../../domain/entities/comment.dart';
+import '../../domain/repositories/post_repository.dart';
+import '../datasources/remote/post_remote_datasource.dart';
+import '../models/post_model.dart';
+import '../models/comment_model.dart';
 
+/// Implementation of PostRepository
+/// 
+/// Handles post operations by coordinating between remote and local data sources.
+/// Implements offline-first approach with caching and optimistic updates.
 class PostRepositoryImpl implements PostRepository {
   final PostRemoteDataSource remoteDataSource;
-  final PostLocalDataSource localDataSource;
+  final StorageService storageService;
+  final NetworkInfo networkInfo;
 
-  PostRepositoryImpl({
+  const PostRepositoryImpl({
     required this.remoteDataSource,
-    required this.localDataSource,
+    required this.storageService,
+    required this.networkInfo,
   });
 
   @override
   Future<Result<List<Post>>> getPosts({
-    bool forceRefresh = false,
-    int limit = 20,
     int page = 1,
+    int limit = 20,
+    bool forceRefresh = false,
   }) async {
     try {
+      final cacheKey = 'posts_${page}_$limit';
+      
+      // Try to get from cache first if not forcing refresh
       if (!forceRefresh) {
-        final cachedPosts = await localDataSource.getCachedPosts(
-          limit: limit,
-          page: page,
-        );
+        final cachedPosts = await _getCachedPosts(cacheKey);
         if (cachedPosts.isNotEmpty) {
-          return Result.success(cachedPosts.map((p) => p.toEntity()).toList());
+          return success(cachedPosts);
         }
       }
 
-      final posts = await remoteDataSource.getPosts(limit: limit, page: page);
-      await localDataSource.cachePosts(posts);
-      return Result.success(posts.map((p) => p.toEntity()).toList());
+      // Check network connectivity
+      if (!await networkInfo.isConnected) {
+        final cachedPosts = await _getCachedPosts(cacheKey);
+        if (cachedPosts.isNotEmpty) {
+          return success(cachedPosts);
+        }
+        return failure(const NetworkFailure('No internet connection and no cached data'));
+      }
+
+      // Fetch from remote
+      final remoteResult = await remoteDataSource.getPosts(page: page, limit: limit);
+      if (remoteResult.isFailure) {
+        return failure(remoteResult.failureValue!);
+      }
+
+      final postModels = remoteResult.successValue!;
+      
+      // Cache the results
+      await _cachePosts(cacheKey, postModels);
+
+      // Convert to domain entities and apply favorites
+      final posts = await _applyFavoritesToPosts(postModels);
+      return success(posts);
+    } on ServerException catch (e) {
+      return failure(ServerFailure(e.message, e.statusCode));
+    } on NetworkException catch (e) {
+      return failure(NetworkFailure(e.message));
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(ServerFailure('Failed to get posts', e.toString()));
+      return failure(UnexpectedFailure('Failed to get posts: $e'));
     }
   }
 
@@ -46,36 +82,97 @@ class PostRepositoryImpl implements PostRepository {
     bool forceRefresh = false,
   }) async {
     try {
+      final cacheKey = 'post_$postId';
+      
+      // Try to get from cache first if not forcing refresh
       if (!forceRefresh) {
-        final cachedPost = await localDataSource.getCachedPost(postId);
+        final cachedPost = await _getCachedPost(cacheKey);
         if (cachedPost != null) {
-          return Result.success(cachedPost.toEntity());
+          return success(cachedPost);
         }
       }
 
-      final post = await remoteDataSource.getPost(postId);
-      await localDataSource.cachePost(post);
-      return Result.success(post.toEntity());
+      // Check network connectivity
+      if (!await networkInfo.isConnected) {
+        final cachedPost = await _getCachedPost(cacheKey);
+        if (cachedPost != null) {
+          return success(cachedPost);
+        }
+        return failure(const NetworkFailure('No internet connection and no cached data'));
+      }
+
+      // Fetch from remote
+      final remoteResult = await remoteDataSource.getPostById(postId);
+      if (remoteResult.isFailure) {
+        return failure(remoteResult.failureValue!);
+      }
+
+      final postModel = remoteResult.successValue!;
+      
+      // Cache the result
+      await _cachePost(cacheKey, postModel);
+
+      // Convert to domain entity and apply favorites
+      final post = await _applyFavoritesToPost(postModel);
+      return success(post);
+    } on ServerException catch (e) {
+      return failure(ServerFailure(e.message, e.statusCode));
+    } on NetworkException catch (e) {
+      return failure(NetworkFailure(e.message));
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(ServerFailure('Failed to get post', e.toString()));
+      return failure(UnexpectedFailure('Failed to get post: $e'));
     }
   }
 
   @override
-  Future<Result<List<Post>>> getPostsByUser({
-    required int userId,
-    int limit = 20,
-    int page = 1,
+  Future<Result<List<Comment>>> getComments({
+    required int postId,
+    bool forceRefresh = false,
   }) async {
     try {
-      final posts = await remoteDataSource.getPostsByUser(
-        userId: userId,
-        limit: limit,
-        page: page,
-      );
-      return Result.success(posts.map((p) => p.toEntity()).toList());
+      final cacheKey = 'comments_$postId';
+      
+      // Try to get from cache first if not forcing refresh
+      if (!forceRefresh) {
+        final cachedComments = await _getCachedComments(cacheKey);
+        if (cachedComments.isNotEmpty) {
+          return success(cachedComments);
+        }
+      }
+
+      // Check network connectivity
+      if (!await networkInfo.isConnected) {
+        final cachedComments = await _getCachedComments(cacheKey);
+        if (cachedComments.isNotEmpty) {
+          return success(cachedComments);
+        }
+        return failure(const NetworkFailure('No internet connection and no cached data'));
+      }
+
+      // Fetch from remote
+      final remoteResult = await remoteDataSource.getComments(postId: postId);
+      if (remoteResult.isFailure) {
+        return failure(remoteResult.failureValue!);
+      }
+
+      final commentModels = remoteResult.successValue!;
+      
+      // Cache the results
+      await _cacheComments(cacheKey, commentModels);
+
+      // Convert to domain entities
+      final comments = commentModels.map((model) => model.toDomain()).toList();
+      return success(comments);
+    } on ServerException catch (e) {
+      return failure(ServerFailure(e.message, e.statusCode));
+    } on NetworkException catch (e) {
+      return failure(NetworkFailure(e.message));
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(ServerFailure('Failed to get user posts', e.toString()));
+      return failure(UnexpectedFailure('Failed to get comments: $e'));
     }
   }
 
@@ -86,45 +183,106 @@ class PostRepositoryImpl implements PostRepository {
     required int userId,
   }) async {
     try {
-      final post = await remoteDataSource.createPost(
+      // Check network connectivity
+      if (!await networkInfo.isConnected) {
+        return failure(const NetworkFailure('No internet connection'));
+      }
+
+      // Create optimistic post
+      final optimisticPost = PostModel(
+        id: DateTime.now().millisecondsSinceEpoch, // Temporary ID
+        title: title,
+        body: body,
+        userId: userId,
+        isOptimistic: true,
+      );
+
+      // Add to cache immediately for optimistic update
+      await _cachePost('post_${optimisticPost.id}', optimisticPost);
+
+      // Create post on server
+      final remoteResult = await remoteDataSource.createPost(
         title: title,
         body: body,
         userId: userId,
       );
-      await localDataSource.cachePost(post);
-      return Result.success(post.toEntity());
+
+      if (remoteResult.isFailure) {
+        // Remove optimistic post from cache on failure
+        await storageService.delete('post_${optimisticPost.id}');
+        return failure(remoteResult.failureValue!);
+      }
+
+      final createdPost = remoteResult.successValue!;
+      
+      // Replace optimistic post with real post
+      await storageService.delete('post_${optimisticPost.id}');
+      await _cachePost('post_${createdPost.id}', createdPost);
+
+      // Invalidate posts cache to force refresh
+      await _invalidatePostsCache();
+
+      return success(createdPost.toDomain());
+    } on ServerException catch (e) {
+      return failure(ServerFailure(e.message, e.statusCode));
+    } on NetworkException catch (e) {
+      return failure(NetworkFailure(e.message));
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(ServerFailure('Failed to create post', e.toString()));
+      return failure(UnexpectedFailure('Failed to create post: $e'));
     }
   }
 
   @override
-  Future<Result<Post>> updatePost({
-    required int postId,
-    required String title,
-    required String body,
+  Future<Result<List<Post>>> searchPosts({
+    required String query,
+    int page = 1,
+    int limit = 20,
   }) async {
     try {
-      final post = await remoteDataSource.updatePost(
-        postId: postId,
-        title: title,
-        body: body,
-      );
-      await localDataSource.cachePost(post);
-      return Result.success(post.toEntity());
-    } catch (e) {
-      return Result.failure(ServerFailure('Failed to update post', e.toString()));
-    }
-  }
+      final cacheKey = 'search_${query.hashCode}_${page}_$limit';
+      
+      // Try to get from cache first
+      final cachedPosts = await _getCachedPosts(cacheKey);
+      if (cachedPosts.isNotEmpty) {
+        return success(cachedPosts);
+      }
 
-  @override
-  Future<Result<void>> deletePost({required int postId}) async {
-    try {
-      await remoteDataSource.deletePost(postId);
-      await localDataSource.removeCachedPost(postId);
-      return Result.success(null);
+      // Check network connectivity
+      if (!await networkInfo.isConnected) {
+        // Perform local search on cached posts
+        final localResults = await _searchLocalPosts(query, page, limit);
+        return success(localResults);
+      }
+
+      // Search on remote
+      final remoteResult = await remoteDataSource.searchPosts(
+        query: query,
+        page: page,
+        limit: limit,
+      );
+
+      if (remoteResult.isFailure) {
+        return failure(remoteResult.failureValue!);
+      }
+
+      final postModels = remoteResult.successValue!;
+      
+      // Cache the results
+      await _cachePosts(cacheKey, postModels);
+
+      // Convert to domain entities and apply favorites
+      final posts = await _applyFavoritesToPosts(postModels);
+      return success(posts);
+    } on ServerException catch (e) {
+      return failure(ServerFailure(e.message, e.statusCode));
+    } on NetworkException catch (e) {
+      return failure(NetworkFailure(e.message));
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(ServerFailure('Failed to delete post', e.toString()));
+      return failure(UnexpectedFailure('Failed to search posts: $e'));
     }
   }
 
@@ -134,82 +292,433 @@ class PostRepositoryImpl implements PostRepository {
     required bool isFavorite,
   }) async {
     try {
+      // Get current user ID (simplified - in real app would get from auth)
+      const userId = 1; // This should come from authentication service
+
+      // Update favorite status locally (optimistic update)
       if (isFavorite) {
-        await localDataSource.addToFavorites(postId);
+        await _addToFavorites(postId, userId);
       } else {
-        await localDataSource.removeFromFavorites(postId);
+        await _removeFromFavorites(postId, userId);
       }
-      
-      final post = await localDataSource.getCachedPost(postId);
-      if (post != null) {
-        return Result.success(post.toEntity());
+
+      // Get the updated post
+      final postResult = await getPost(postId: postId, forceRefresh: false);
+      if (postResult.isFailure) {
+        return failure(postResult.failureValue!);
       }
-      
-      // Fallback to remote if not cached
-      final remotePost = await remoteDataSource.getPost(postId);
-      return Result.success(remotePost.toEntity());
+
+      return success(postResult.successValue!);
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(CacheFailure('Failed to toggle favorite', e.toString()));
+      return failure(UnexpectedFailure('Failed to toggle favorite: $e'));
+    }
+  }
+
+  @override
+  Future<Result<List<Post>>> refreshPosts({
+    bool clearCache = false,
+  }) async {
+    try {
+      if (clearCache) {
+        await _clearPostsCache();
+      }
+
+      // Force refresh from remote
+      return await getPosts(page: 1, limit: 20, forceRefresh: true);
+    } catch (e) {
+      return failure(UnexpectedFailure('Failed to refresh posts: $e'));
     }
   }
 
   @override
   Future<Result<List<Post>>> getFavoritePosts({
     required int userId,
-    int limit = 20,
     int page = 1,
+    int limit = 20,
   }) async {
     try {
-      final favoritePosts = await localDataSource.getFavoritePosts(
-        limit: limit,
-        page: page,
-      );
-      return Result.success(favoritePosts.map((p) => p.toEntity()).toList());
-    } catch (e) {
-      return Result.failure(CacheFailure('Failed to get favorite posts', e.toString()));
-    }
-  }
-
-  @override
-  Future<Result<List<Post>>> searchPosts({
-    required String query,
-    int limit = 20,
-    int page = 1,
-  }) async {
-    try {
-      final posts = await remoteDataSource.searchPosts(
-        query: query,
-        limit: limit,
-        page: page,
-      );
-      return Result.success(posts.map((p) => p.toEntity()).toList());
-    } catch (e) {
-      return Result.failure(ServerFailure('Failed to search posts', e.toString()));
-    }
-  }
-
-  @override
-  Future<Result<List<Post>>> refreshPosts({bool clearCache = false}) async {
-    try {
-      if (clearCache) {
-        await localDataSource.clearCache();
-      }
+      final favoritePosts = await _getFavoritePosts(userId);
       
-      final posts = await remoteDataSource.getPosts();
-      await localDataSource.cachePosts(posts);
-      return Result.success(posts.map((p) => p.toEntity()).toList());
+      // Apply pagination
+      final startIndex = (page - 1) * limit;
+      final endIndex = startIndex + limit;
+      
+      final paginatedPosts = favoritePosts.length > startIndex
+          ? favoritePosts.sublist(
+              startIndex,
+              endIndex > favoritePosts.length ? favoritePosts.length : endIndex,
+            )
+          : <Post>[];
+
+      return success(paginatedPosts);
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(ServerFailure('Failed to refresh posts', e.toString()));
+      return failure(UnexpectedFailure('Failed to get favorite posts: $e'));
     }
   }
 
   @override
-  Future<Result<List<Comment>>> getComments({required int postId}) async {
+  Future<Result<void>> deletePost({
+    required int postId,
+  }) async {
     try {
-      final comments = await remoteDataSource.getComments(postId);
-      return Result.success(comments.map((c) => c.toEntity()).toList());
+      // Check network connectivity
+      if (!await networkInfo.isConnected) {
+        return failure(const NetworkFailure('No internet connection'));
+      }
+
+      // Delete from remote
+      final remoteResult = await remoteDataSource.deletePost(postId);
+      if (remoteResult.isFailure) {
+        return failure(remoteResult.failureValue!);
+      }
+
+      // Remove from cache
+      await storageService.delete('post_$postId');
+      await _invalidatePostsCache();
+
+      return success(null);
+    } on ServerException catch (e) {
+      return failure(ServerFailure(e.message, e.statusCode));
+    } on NetworkException catch (e) {
+      return failure(NetworkFailure(e.message));
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
     } catch (e) {
-      return Result.failure(ServerFailure('Failed to get comments', e.toString()));
+      return failure(UnexpectedFailure('Failed to delete post: $e'));
     }
+  }
+
+  @override
+  Future<Result<List<Post>>> getPostsByUser({
+    required int userId,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    try {
+      final cacheKey = 'user_posts_${userId}_${page}_$limit';
+      
+      // Try to get from cache first
+      final cachedPosts = await _getCachedPosts(cacheKey);
+      if (cachedPosts.isNotEmpty) {
+        return success(cachedPosts);
+      }
+
+      // Check network connectivity
+      if (!await networkInfo.isConnected) {
+        return failure(const NetworkFailure('No internet connection and no cached data'));
+      }
+
+      // Fetch from remote
+      final remoteResult = await remoteDataSource.getPostsByUserId(userId);
+      if (remoteResult.isFailure) {
+        return failure(remoteResult.failureValue!);
+      }
+
+      final postModels = remoteResult.successValue!;
+      
+      // Apply pagination
+      final startIndex = (page - 1) * limit;
+      final endIndex = startIndex + limit;
+      
+      final paginatedModels = postModels.length > startIndex
+          ? postModels.sublist(
+              startIndex,
+              endIndex > postModels.length ? postModels.length : endIndex,
+            )
+          : <PostModel>[];
+
+      // Cache the results
+      await _cachePosts(cacheKey, paginatedModels);
+
+      // Convert to domain entities and apply favorites
+      final posts = await _applyFavoritesToPosts(paginatedModels);
+      return success(posts);
+    } on ServerException catch (e) {
+      return failure(ServerFailure(e.message, e.statusCode));
+    } on NetworkException catch (e) {
+      return failure(NetworkFailure(e.message));
+    } on CacheException catch (e) {
+      return failure(CacheFailure(e.message));
+    } catch (e) {
+      return failure(UnexpectedFailure('Failed to get posts by user: $e'));
+    }
+  }
+
+  // Private helper methods
+
+  Future<List<Post>> _getCachedPosts(String cacheKey) async {
+    try {
+      final cachedData = await storageService.get<String>(cacheKey);
+      if (cachedData == null) return [];
+
+      final cacheInfo = _parseCacheInfo(cachedData);
+      if (_isCacheExpired(cacheInfo['timestamp'], const Duration(minutes: 15))) {
+        return [];
+      }
+
+      final postIds = List<String>.from(cacheInfo['postIds'] ?? []);
+      final posts = <Post>[];
+
+      for (final postIdStr in postIds) {
+        final postData = await storageService.get<String>('post_$postIdStr');
+        if (postData != null) {
+          final postModel = PostModel.fromJsonString(postData);
+          final post = await _applyFavoritesToPost(postModel);
+          posts.add(post);
+        }
+      }
+
+      return posts;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<Post?> _getCachedPost(String cacheKey) async {
+    try {
+      final cachedData = await storageService.get<String>(cacheKey);
+      if (cachedData == null) return null;
+
+      final postModel = PostModel.fromJsonString(cachedData);
+      return await _applyFavoritesToPost(postModel);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<List<Comment>> _getCachedComments(String cacheKey) async {
+    try {
+      final cachedData = await storageService.get<String>(cacheKey);
+      if (cachedData == null) return [];
+
+      final cacheInfo = _parseCacheInfo(cachedData);
+      if (_isCacheExpired(cacheInfo['timestamp'], const Duration(minutes: 10))) {
+        return [];
+      }
+
+      final commentIds = List<String>.from(cacheInfo['commentIds'] ?? []);
+      final comments = <Comment>[];
+
+      for (final commentIdStr in commentIds) {
+        final commentData = await storageService.get<String>('comment_$commentIdStr');
+        if (commentData != null) {
+          final commentModel = CommentModel.fromJsonString(commentData);
+          comments.add(commentModel.toDomain());
+        }
+      }
+
+      return comments;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<void> _cachePosts(String cacheKey, List<PostModel> posts) async {
+    try {
+      // Cache individual posts
+      for (final post in posts) {
+        await storageService.store('post_${post.id}', post.toJsonString());
+      }
+
+      // Cache the list metadata
+      final cacheInfo = {
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'postIds': posts.map((p) => p.id.toString()).toList(),
+      };
+      await storageService.store(cacheKey, _encodeCacheInfo(cacheInfo));
+    } catch (e) {
+      throw CacheException('Failed to cache posts: $e');
+    }
+  }
+
+  Future<void> _cachePost(String cacheKey, PostModel post) async {
+    try {
+      await storageService.store(cacheKey, post.toJsonString());
+    } catch (e) {
+      throw CacheException('Failed to cache post: $e');
+    }
+  }
+
+  Future<void> _cacheComments(String cacheKey, List<CommentModel> comments) async {
+    try {
+      // Cache individual comments
+      for (final comment in comments) {
+        await storageService.store('comment_${comment.id}', comment.toJsonString());
+      }
+
+      // Cache the list metadata
+      final cacheInfo = {
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'commentIds': comments.map((c) => c.id.toString()).toList(),
+      };
+      await storageService.store(cacheKey, _encodeCacheInfo(cacheInfo));
+    } catch (e) {
+      throw CacheException('Failed to cache comments: $e');
+    }
+  }
+
+  Future<Post> _applyFavoritesToPost(PostModel postModel) async {
+    try {
+      const userId = 1; // This should come from authentication service
+      final isFavorite = await _isPostFavorite(postModel.id, userId);
+      return postModel.toDomain().copyWith(isFavorite: isFavorite);
+    } catch (e) {
+      return postModel.toDomain();
+    }
+  }
+
+  Future<List<Post>> _applyFavoritesToPosts(List<PostModel> postModels) async {
+    final posts = <Post>[];
+    for (final postModel in postModels) {
+      final post = await _applyFavoritesToPost(postModel);
+      posts.add(post);
+    }
+    return posts;
+  }
+
+  Future<bool> _isPostFavorite(int postId, int userId) async {
+    try {
+      final favoriteKey = 'favorite_${userId}_$postId';
+      final isFavorite = await storageService.get<bool>(favoriteKey);
+      return isFavorite ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<void> _addToFavorites(int postId, int userId) async {
+    try {
+      final favoriteKey = 'favorite_${userId}_$postId';
+      await storageService.store(favoriteKey, true);
+    } catch (e) {
+      throw CacheException('Failed to add to favorites: $e');
+    }
+  }
+
+  Future<void> _removeFromFavorites(int postId, int userId) async {
+    try {
+      final favoriteKey = 'favorite_${userId}_$postId';
+      await storageService.delete(favoriteKey);
+    } catch (e) {
+      throw CacheException('Failed to remove from favorites: $e');
+    }
+  }
+
+  Future<List<Post>> _getFavoritePosts(int userId) async {
+    try {
+      // This is a simplified implementation
+      // In a real app, you'd have a more efficient way to track favorites
+      final posts = <Post>[];
+      
+      // Get all cached posts and filter favorites
+      // This is not efficient but works for the demo
+      for (int i = 1; i <= 100; i++) {
+        final postData = await storageService.get<String>('post_$i');
+        if (postData != null) {
+          final isFavorite = await _isPostFavorite(i, userId);
+          if (isFavorite) {
+            final postModel = PostModel.fromJsonString(postData);
+            final post = postModel.toDomain().copyWith(isFavorite: true);
+            posts.add(post);
+          }
+        }
+      }
+
+      return posts;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<List<Post>> _searchLocalPosts(String query, int page, int limit) async {
+    try {
+      final allPosts = <Post>[];
+      
+      // Get all cached posts
+      for (int i = 1; i <= 100; i++) {
+        final postData = await storageService.get<String>('post_$i');
+        if (postData != null) {
+          final postModel = PostModel.fromJsonString(postData);
+          final post = await _applyFavoritesToPost(postModel);
+          allPosts.add(post);
+        }
+      }
+
+      // Filter by query
+      final filteredPosts = allPosts.where((post) {
+        final titleMatch = post.title.toLowerCase().contains(query.toLowerCase());
+        final bodyMatch = post.body.toLowerCase().contains(query.toLowerCase());
+        return titleMatch || bodyMatch;
+      }).toList();
+
+      // Apply pagination
+      final startIndex = (page - 1) * limit;
+      final endIndex = startIndex + limit;
+      
+      return filteredPosts.length > startIndex
+          ? filteredPosts.sublist(
+              startIndex,
+              endIndex > filteredPosts.length ? filteredPosts.length : endIndex,
+            )
+          : <Post>[];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  Future<void> _clearPostsCache() async {
+    try {
+      // This is a simplified implementation
+      // In a real app, you'd have a more efficient way to clear cache
+      for (int i = 1; i <= 100; i++) {
+        await storageService.delete('post_$i');
+        await storageService.delete('comment_$i');
+      }
+    } catch (e) {
+      throw CacheException('Failed to clear posts cache: $e');
+    }
+  }
+
+  Future<void> _invalidatePostsCache() async {
+    try {
+      // Clear posts list caches
+      for (int page = 1; page <= 10; page++) {
+        await storageService.delete('posts_${page}_20');
+      }
+    } catch (e) {
+      // Ignore cache invalidation errors
+    }
+  }
+
+  Map<String, dynamic> _parseCacheInfo(String cacheData) {
+    try {
+      // Simple format: timestamp|postIds
+      final parts = cacheData.split('|');
+      if (parts.length >= 2) {
+        return {
+          'timestamp': int.parse(parts[0]),
+          'postIds': parts[1].split(','),
+        };
+      }
+      return {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  String _encodeCacheInfo(Map<String, dynamic> cacheInfo) {
+    final timestamp = cacheInfo['timestamp'];
+    final ids = (cacheInfo['postIds'] ?? cacheInfo['commentIds'] ?? []).join(',');
+    return '$timestamp|$ids';
+  }
+
+  bool _isCacheExpired(int? timestamp, Duration maxAge) {
+    if (timestamp == null) return true;
+    final cacheTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    return DateTime.now().difference(cacheTime) > maxAge;
   }
 }

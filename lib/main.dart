@@ -1,11 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:mini_feed/core/storage/storage_initializer.dart';
+import 'package:mini_feed/presentation/blocs/auth/auth_bloc.dart';
+import 'package:mini_feed/presentation/blocs/auth/auth_event.dart';
+import 'package:mini_feed/presentation/routes/app_router.dart';
+import 'package:mini_feed/presentation/theme/app_theme.dart';
+import 'package:mini_feed/core/di/injection_container.dart' as di;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Initialize storage
   await StorageInitializer.initialize();
+  
+  // Initialize dependency injection
+  await di.init();
   
   runApp(const MyApp());
 }
@@ -14,14 +23,24 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'Mini Feed',
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-          useMaterial3: true,
+  Widget build(BuildContext context) {
+    return MultiBlocProvider(
+      providers: [
+        BlocProvider<AuthBloc>(
+          create: (context) => di.sl<AuthBloc>()
+            ..add(const AuthStatusChecked()),
         ),
-        home: const ArchitectureDemoPage(),
-      );
+      ],
+      child: MaterialApp(
+        title: 'Mini Feed',
+        theme: AppTheme.lightTheme,
+        darkTheme: AppTheme.darkTheme,
+        themeMode: ThemeMode.system,
+        onGenerateRoute: AppRouter.generateRoute,
+        initialRoute: '/',
+      ),
+    );
+  }
 }
 
 class ArchitectureDemoPage extends StatelessWidget {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mini_feed/presentation/theme/app_colors.dart';
 import 'package:mini_feed/presentation/theme/app_text_styles.dart';
+import 'package:mini_feed/presentation/theme/app_theme_extensions.dart';
 
 class AppTheme {
   static ThemeData get lightTheme {
@@ -37,7 +38,7 @@ class AppTheme {
           color: AppColors.lightOnSurface,
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: AppColors.lightSurface,
         elevation: 1,
         shadowColor: AppColors.black.withOpacity(0.1),
@@ -116,6 +117,9 @@ class AppTheme {
         color: AppColors.lightBorder,
         thickness: 1,
       ),
+      extensions: const [
+        AppThemeExtension.light,
+      ],
     );
   }
 
@@ -152,7 +156,7 @@ class AppTheme {
           color: AppColors.darkOnSurface,
         ),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: AppColors.darkSurface,
         elevation: 1,
         shadowColor: AppColors.black.withOpacity(0.3),
@@ -231,6 +235,9 @@ class AppTheme {
         color: AppColors.darkBorder,
         thickness: 1,
       ),
+      extensions: const [
+        AppThemeExtension.dark,
+      ],
     );
   }
 

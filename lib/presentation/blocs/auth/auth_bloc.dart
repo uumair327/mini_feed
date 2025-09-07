@@ -1,5 +1,6 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:mini_feed/core/utils/logger.dart';
+import 'package:mini_feed/core/utils/result.dart';
 import 'package:mini_feed/domain/usecases/auth/check_auth_status_usecase.dart';
 import 'package:mini_feed/domain/usecases/auth/get_current_user_usecase.dart';
 import 'package:mini_feed/domain/usecases/auth/login_usecase.dart';
@@ -40,15 +41,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       ));
 
       if (result.isSuccess) {
-        final user = result.data!;
+        final user = result.successValue!;
         Logger.info('Login successful for user: ${user.email}');
         emit(AuthSuccess(user: user));
       } else {
-        final failure = result.error!;
-        Logger.error('Login failed: ${failure.message}', failure.details);
+        final failure = result.failureValue!;
+        Logger.error('Login failed: ${failure.message}');
         emit(AuthFailure(
           message: failure.message,
-          details: failure.details,
         ));
       }
     } catch (e) {
@@ -68,14 +68,14 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     try {
       Logger.info('Attempting logout');
       
-      final result = await logoutUseCase(const NoParams());
+      final result = await logoutUseCase();
 
       if (result.isSuccess) {
         Logger.info('Logout successful');
         emit(const AuthLoggedOut());
       } else {
-        final failure = result.error!;
-        Logger.error('Logout failed: ${failure.message}', failure.details);
+        final failure = result.failureValue!;
+        Logger.error('Logout failed: ${failure.message}');
         // Even if logout fails, we should still log out locally
         emit(const AuthLoggedOut());
       }
@@ -95,10 +95,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     try {
       Logger.info('Checking authentication status');
       
-      final result = await checkAuthStatusUseCase(const NoParams());
+      final result = await checkAuthStatusUseCase();
 
       if (result.isSuccess) {
-        final user = result.data;
+        final user = result.successValue;
         if (user != null) {
           Logger.info('User is authenticated: ${user.email}');
           emit(AuthSuccess(user: user));
@@ -107,8 +107,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
           emit(const AuthLoggedOut());
         }
       } else {
-        final failure = result.error!;
-        Logger.error('Auth status check failed: ${failure.message}', failure.details);
+        final failure = result.failureValue!;
+        Logger.error('Auth status check failed: ${failure.message}');
         emit(const AuthLoggedOut());
       }
     } catch (e) {
@@ -124,10 +124,10 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     try {
       Logger.info('Attempting token refresh');
       
-      final result = await getCurrentUserUseCase(const NoParams());
+      final result = await getCurrentUserUseCase();
 
       if (result.isSuccess) {
-        final user = result.data;
+        final user = result.successValue;
         if (user != null) {
           Logger.info('Token refresh successful for user: ${user.email}');
           emit(AuthSuccess(user: user));
@@ -136,8 +136,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
           emit(const AuthLoggedOut());
         }
       } else {
-        final failure = result.error!;
-        Logger.error('Token refresh failed: ${failure.message}', failure.details);
+        final failure = result.failureValue!;
+        Logger.error('Token refresh failed: ${failure.message}');
         emit(const AuthLoggedOut());
       }
     } catch (e) {
