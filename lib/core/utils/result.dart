@@ -24,4 +24,12 @@ extension ResultExtension<T> on Result<T> {
     (failure) => failure,
     (success) => null,
   );
+  
+  /// Gets the success value or null if it's a failure (alias for successValue)
+  T? getOrNull() => successValue;
 }
+
+/// Helper functions for creating Result instances
+Result<T> success<T>(T value) => Right(value);
+
+Result<T> failure<T>(Failure failure) => Left(failure);

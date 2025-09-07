@@ -49,3 +49,8 @@ class ValidationFailure extends Failure {
 class UnexpectedFailure extends Failure {
   const UnexpectedFailure(super.message);
 }
+
+/// Failure when requested resource is not found
+class NotFoundFailure extends Failure {
+  const NotFoundFailure(super.message);
+}
