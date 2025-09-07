@@ -11,4 +11,6 @@ class CacheConstants {
   // Cache settings
   static const Duration cacheExpiration = Duration(hours: 1);
   static const int maxCacheSize = 1000; // Maximum number of cached posts
+  static const int defaultTtlHours = 24;
+  static const String defaultVersion = '1.0.0';
 }
