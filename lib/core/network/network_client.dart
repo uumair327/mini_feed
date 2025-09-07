@@ -116,6 +116,31 @@ class NetworkClient {
     }
   }
   
+  /// Perform PATCH request
+  Future<Response<T>> patch<T>(
+    String path, {
+    dynamic data,
+    Map<String, dynamic>? queryParameters,
+    Options? options,
+    CancelToken? cancelToken,
+  }) async {
+    try {
+      final response = await _dio.patch<T>(
+        path,
+        data: data,
+        queryParameters: queryParameters,
+        options: options,
+        cancelToken: cancelToken,
+      );
+      return response;
+    } on DioException catch (e) {
+      throw ErrorHandler.handleDioError(e);
+    } catch (e) {
+      Logger.error('Unexpected error in PATCH request', e);
+      rethrow;
+    }
+  }
+
   /// Perform DELETE request
   Future<Response<T>> delete<T>(
     String path, {
