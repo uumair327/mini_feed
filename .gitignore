@@ -97,3 +97,45 @@ coverage/
 
 # Test coverage
 lcov.info
+
+# Kiro IDE files
+.kiro/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Log files
+*.log
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+
+# Editor backup files
+*~
+*.bak
+*.swp
+*.swo
+
+# Package files
+*.tar.gz
+*.zip
+*.rar
+
+# Local configuration files
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# FVM (Flutter Version Management)
+.fvm/
+
+# Mason
+.mason/
