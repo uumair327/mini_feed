@@ -26,8 +26,9 @@ class StorageServiceImpl implements StorageService {
   static const String _generalBoxName = 'mini_feed_general';
   
   late final FlutterSecureStorage _secureStorage;
-  late final SharedPreferences _prefs;
+  SharedPreferences? _prefs;
   Box? _generalBox;
+  bool _isInitialized = false;
 
   StorageServiceImpl() {
     _secureStorage = const FlutterSecureStorage(
@@ -42,21 +43,28 @@ class StorageServiceImpl implements StorageService {
   
   @override
   Future<void> initialize() async {
+    if (_isInitialized) {
+      Logger.debug('Storage service already initialized, skipping...');
+      return;
+    }
+    
     try {
-      Logger.debug('Initializing storage services...');
+      Logger.debug('Initializing storage service...');
       
-      // Initialize Hive
-      await Hive.initFlutter();
-      
-      // Open general storage box
-      _generalBox = await Hive.openBox(_generalBoxName);
+      // Open general storage box (Hive should already be initialized by StorageInitializer)
+      if (_generalBox == null) {
+        _generalBox = await Hive.openBox(_generalBoxName);
+      }
       
       // Initialize SharedPreferences
-      _prefs = await SharedPreferences.getInstance();
+      if (_prefs == null) {
+        _prefs = await SharedPreferences.getInstance();
+      }
       
-      Logger.debug('Storage services initialized successfully');
+      _isInitialized = true;
+      Logger.debug('Storage service initialized successfully');
     } catch (e) {
-      Logger.error('Failed to initialize storage services', e);
+      Logger.error('Failed to initialize storage service', e);
       rethrow;
     }
   }
@@ -109,7 +117,7 @@ class StorageServiceImpl implements StorageService {
   @override
   Future<void> store(String key, dynamic value) async {
     try {
-      if (_generalBox == null) {
+      if (_generalBox == null || _prefs == null) {
         throw Exception('Storage not initialized');
       }
       
@@ -119,18 +127,18 @@ class StorageServiceImpl implements StorageService {
       } else {
         // Store in SharedPreferences for simple types
         if (value is String) {
-          await _prefs.setString(key, value);
+          await _prefs!.setString(key, value);
         } else if (value is int) {
-          await _prefs.setInt(key, value);
+          await _prefs!.setInt(key, value);
         } else if (value is double) {
-          await _prefs.setDouble(key, value);
+          await _prefs!.setDouble(key, value);
         } else if (value is bool) {
-          await _prefs.setBool(key, value);
+          await _prefs!.setBool(key, value);
         } else if (value is List<String>) {
-          await _prefs.setStringList(key, value);
+          await _prefs!.setStringList(key, value);
         } else {
           // Fallback to JSON string for other types
-          await _prefs.setString(key, jsonEncode(value));
+          await _prefs!.setString(key, jsonEncode(value));
         }
       }
       
@@ -144,7 +152,7 @@ class StorageServiceImpl implements StorageService {
   @override
   Future<T?> get<T>(String key) async {
     try {
-      if (_generalBox == null) {
+      if (_generalBox == null || _prefs == null) {
         throw Exception('Storage not initialized');
       }
       
@@ -156,7 +164,7 @@ class StorageServiceImpl implements StorageService {
       }
       
       // Fallback to SharedPreferences
-      final prefsValue = _prefs.get(key);
+      final prefsValue = _prefs!.get(key);
       if (prefsValue != null) {
         Logger.debug('Retrieved data from SharedPreferences for key: $key');
         return prefsValue as T?;
@@ -172,13 +180,13 @@ class StorageServiceImpl implements StorageService {
   @override
   Future<void> delete(String key) async {
     try {
-      if (_generalBox == null) {
+      if (_generalBox == null || _prefs == null) {
         throw Exception('Storage not initialized');
       }
       
       // Delete from both storages
       await _generalBox!.delete(key);
-      await _prefs.remove(key);
+      await _prefs!.remove(key);
       
       Logger.debug('Deleted data for key: $key');
     } catch (e) {
@@ -190,13 +198,13 @@ class StorageServiceImpl implements StorageService {
   @override
   Future<void> clear() async {
     try {
-      if (_generalBox == null) {
+      if (_generalBox == null || _prefs == null) {
         throw Exception('Storage not initialized');
       }
       
       // Clear both storages
       await _generalBox!.clear();
-      await _prefs.clear();
+      await _prefs!.clear();
       
       Logger.debug('Cleared all general storage');
     } on Exception catch (e) {

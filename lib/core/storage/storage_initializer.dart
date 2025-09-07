@@ -10,13 +10,19 @@ class StorageInitializer {
   static StorageService? _storageService;
   static CacheManager? _cacheManager;
   static TokenStorage? _tokenStorage;
+  static bool _isInitialized = false;
   
   /// Initialize all storage services
   static Future<void> initialize() async {
+    if (_isInitialized) {
+      Logger.debug('Storage services already initialized, skipping...');
+      return;
+    }
+    
     try {
       Logger.debug('Initializing storage services...');
       
-      // Initialize Hive
+      // Initialize Hive only once
       await Hive.initFlutter();
       Logger.debug('Hive initialized');
       
@@ -37,6 +43,7 @@ class StorageInitializer {
       // Clean up expired cache entries on startup
       await _cacheManager!.clearExpired();
       
+      _isInitialized = true;
       Logger.debug('All storage services initialized successfully');
     } catch (e) {
       Logger.error('Failed to initialize storage services', e);
@@ -77,6 +84,7 @@ class StorageInitializer {
       _storageService = null;
       _cacheManager = null;
       _tokenStorage = null;
+      _isInitialized = false;
       
       Logger.debug('All storage services disposed');
     } on Exception catch (e) {
@@ -85,10 +93,7 @@ class StorageInitializer {
   }
   
   /// Check if storage services are initialized
-  static bool get isInitialized => 
-      _storageService != null && 
-      _cacheManager != null && 
-      _tokenStorage != null;
+  static bool get isInitialized => _isInitialized;
   
   /// Clear all storage data (useful for testing or logout)
   static Future<void> clearAllData() async {
