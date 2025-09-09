@@ -22,7 +22,12 @@ import 'package:mini_feed/presentation/blocs/feed/feed_bloc.dart';
 import 'package:mini_feed/presentation/blocs/connectivity/connectivity_cubit.dart';
 import 'package:mini_feed/domain/usecases/posts/get_posts_usecase.dart';
 import 'package:mini_feed/domain/usecases/posts/search_posts_usecase.dart';
-
+import 'package:mini_feed/domain/usecases/posts/get_post_details_usecase.dart';
+import 'package:mini_feed/domain/usecases/comments/get_comments_usecase.dart';
+import 'package:mini_feed/domain/usecases/favorites/toggle_favorite_usecase.dart';
+import 'package:mini_feed/presentation/blocs/post_details/post_details_bloc.dart';
+import 'package:mini_feed/domain/usecases/posts/create_post_usecase.dart';
+import 'package:mini_feed/presentation/blocs/post_creation/post_creation_bloc.dart';
 
 final sl = GetIt.instance;
 
@@ -43,6 +48,20 @@ Future<void> init() async {
       searchPostsUseCase: sl(),
     ),
   );
+  
+  sl.registerFactory(
+    () => PostDetailsBloc(
+      getPostDetailsUseCase: sl(),
+      getCommentsUseCase: sl(),
+      toggleFavoriteUseCase: sl(),
+    ),
+  );
+
+  sl.registerFactory(
+    () => PostCreationBloc(
+      createPostUseCase: sl(),
+    ),
+  );
 
   sl.registerLazySingleton(
     () => ConnectivityCubit(
@@ -60,6 +79,10 @@ Future<void> init() async {
   // Use Cases - Posts
   sl.registerLazySingleton(() => GetPostsUseCase(sl()));
   sl.registerLazySingleton(() => SearchPostsUseCase(sl()));
+  sl.registerLazySingleton(() => GetPostDetailsUseCase(sl()));
+  sl.registerLazySingleton(() => GetCommentsUseCase(sl()));
+  sl.registerLazySingleton(() => ToggleFavoriteUseCase(sl()));
+  sl.registerLazySingleton(() => CreatePostUseCase(sl()));
 
 
   // Repositories

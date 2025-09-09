@@ -1,27 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:mini_feed/core/storage/storage_initializer.dart';
-import 'package:mini_feed/presentation/blocs/auth/auth_bloc.dart';
-import 'package:mini_feed/presentation/blocs/auth/auth_event.dart';
-import 'package:mini_feed/presentation/blocs/connectivity/connectivity_cubit.dart';
-import 'package:mini_feed/presentation/routes/app_router.dart';
-import 'package:mini_feed/presentation/theme/app_theme.dart';
-import 'package:mini_feed/core/di/injection_container.dart' as di;
-import 'package:mini_feed/core/sync/sync_service.dart';
-import 'package:mini_feed/core/error_handling/global_error_handler.dart';
+
+import 'core/di/injection_container.dart' as di;
+import 'core/error_handling/global_error_handler.dart';
+import 'core/storage/storage_initializer.dart';
+import 'core/sync/sync_service.dart';
+import 'presentation/blocs/auth/auth_bloc.dart';
+import 'presentation/blocs/auth/auth_event.dart';
+import 'presentation/blocs/connectivity/connectivity_cubit.dart';
+import 'presentation/routes/app_router.dart';
+import 'presentation/theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   // Initialize global error handling
   GlobalErrorHandler.initialize();
-  
+
   // Initialize storage
   await StorageInitializer.initialize();
-  
+
   // Initialize dependency injection
   await di.init();
-  
+
   runApp(const MyApp());
 }
 
@@ -29,8 +30,7 @@ class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MultiBlocProvider(
+  Widget build(BuildContext context) => MultiBlocProvider(
       providers: [
         BlocProvider<AuthBloc>(
           create: (context) => di.sl<AuthBloc>()
@@ -39,10 +39,10 @@ class MyApp extends StatelessWidget {
         BlocProvider<ConnectivityCubit>(
           create: (context) {
             // Initialize sync service
-            final syncService = di.sl<SyncService>();
-            syncService.initialize();
-            syncService.startAutoSync();
-            
+            di.sl<SyncService>()
+              ..initialize()
+              ..startAutoSync();
+
             return di.sl<ConnectivityCubit>()
               ..initialize();
           },
@@ -52,20 +52,17 @@ class MyApp extends StatelessWidget {
         title: 'Mini Feed',
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
-        themeMode: ThemeMode.system,
         onGenerateRoute: AppRouter.generateRoute,
         initialRoute: '/',
       ),
     );
-  }
 }
 
 class ArchitectureDemoPage extends StatelessWidget {
   const ArchitectureDemoPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
+  Widget build(BuildContext context) => Scaffold(
       appBar: AppBar(
         title: const Text('Mini Feed - Clean Architecture Demo'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
@@ -84,15 +81,13 @@ class ArchitectureDemoPage extends StatelessWidget {
         ),
       ),
     );
-  }
 }
 
 class _ArchitectureOverview extends StatelessWidget {
   const _ArchitectureOverview();
 
   @override
-  Widget build(BuildContext context) {
-    return Card(
+  Widget build(BuildContext context) => Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -104,25 +99,25 @@ class _ArchitectureOverview extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             const Text(
-              'This app demonstrates Clean Architecture with 4 distinct layers:\n'
+              'This app demonstrates Clean Architecture\n'
+              'with 4 distinct layers:\n'
               '• Presentation Layer (UI, BLoC/Cubit)\n'
               '• Domain Layer (Entities, Use Cases, Repository Interfaces)\n'
-              '• Data Layer (Models, Data Sources, Repository Implementations)\n'
+              '• Data Layer (Models, Data Sources,\n'
+              '  Repository Implementations)\n'
               '• Core Layer (Network, Storage, Utilities)',
             ),
           ],
         ),
       ),
     );
-  }
 }
 
 class _LayerDetails extends StatelessWidget {
   const _LayerDetails();
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
+  Widget build(BuildContext context) => Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
@@ -176,7 +171,6 @@ class _LayerDetails extends StatelessWidget {
         ),
       ],
     );
-  }
 }
 
 class _LayerCard extends StatelessWidget {
@@ -193,8 +187,7 @@ class _LayerCard extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    return Card(
+  Widget build(BuildContext context) => Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -211,8 +204,8 @@ class _LayerCard extends StatelessWidget {
                 ),
                 Chip(
                   label: Text(status),
-                  backgroundColor: status.contains('Fully') 
-                      ? Colors.green.shade100 
+                  backgroundColor: status.contains('Fully')
+                      ? Colors.green.shade100
                       : Colors.orange.shade100,
                 ),
               ],
@@ -233,15 +226,13 @@ class _LayerCard extends StatelessWidget {
         ),
       ),
     );
-  }
 }
 
 class _ImplementationStatus extends StatelessWidget {
   const _ImplementationStatus();
 
   @override
-  Widget build(BuildContext context) {
-    return Card(
+  Widget build(BuildContext context) => Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -267,5 +258,4 @@ class _ImplementationStatus extends StatelessWidget {
         ),
       ),
     );
-  }
 }
