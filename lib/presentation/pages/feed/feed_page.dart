@@ -7,11 +7,15 @@ import '../../blocs/feed/feed_state.dart';
 import '../../routes/app_router.dart';
 import '../../widgets/common/loading_indicators.dart';
 import '../../widgets/common/error_widgets.dart';
+import '../../widgets/common/comprehensive_error_widget.dart';
 import '../../widgets/common/empty_state_widgets.dart';
 import '../../widgets/common/responsive_layout.dart';
+import '../../widgets/common/offline_indicators.dart';
 import '../../widgets/feed/post_list_item.dart';
 import '../../widgets/feed/search_suggestions.dart';
 import '../../theme/app_breakpoints.dart';
+import '../post_details/post_details_page.dart';
+import '../post_creation/new_post_page.dart';
 import '../../../core/di/injection_container.dart' as di;
 
 class FeedPage extends StatefulWidget {
@@ -91,21 +95,24 @@ class _FeedPageState extends State<FeedPage> {
       value: _feedBloc,
       child: Scaffold(
         appBar: _buildAppBar(),
-        body: ResponsiveContainer(
-          child: Column(
-            children: [
-              _buildSearchBar(),
-              if (_showSearchSuggestions) _buildSearchSuggestions(),
-              Expanded(
-                child: BlocBuilder<FeedBloc, FeedState>(
-                  builder: (context, state) {
-                    return _buildBody(state);
-                  },
+        body: OfflineBanner(
+          child: ResponsiveContainer(
+            child: Column(
+              children: [
+                _buildSearchBar(),
+                if (_showSearchSuggestions) _buildSearchSuggestions(),
+                Expanded(
+                  child: BlocBuilder<FeedBloc, FeedState>(
+                    builder: (context, state) {
+                      return _buildBody(state);
+                    },
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
+        floatingActionButton: _buildFloatingActionButton(),
       ),
     );
   }
@@ -114,6 +121,8 @@ class _FeedPageState extends State<FeedPage> {
     return AppBar(
       title: const Text('Mini Feed'),
       actions: [
+        const ConnectivityIndicator(),
+        const SizedBox(width: 8),
         IconButton(
           icon: const Icon(Icons.logout),
           onPressed: () => AppNavigation.logout(context),
@@ -160,9 +169,11 @@ class _FeedPageState extends State<FeedPage> {
     }
 
     if (state is FeedError) {
-      return AppErrorWidget(
+      return ComprehensiveErrorWidget(
         message: state.message,
-        onRetry: () => _feedBloc.add(const FeedRequested()),
+        details: state.details,
+        canRetry: state.canRetry,
+        onRetry: state.canRetry ? () => _feedBloc.add(const FeedRetryRequested()) : null,
       );
     }
 
@@ -211,9 +222,10 @@ class _FeedPageState extends State<FeedPage> {
   }
 
   void _navigateToPostDetails(int postId) {
-    // TODO: Navigate to post details page
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Navigate to post $postId')),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => PostDetailsPage(postId: postId),
+      ),
     );
   }
 
@@ -241,6 +253,29 @@ class _FeedPageState extends State<FeedPage> {
         setState(() {});
       },
     );
+  }
+
+  Widget _buildFloatingActionButton() {
+    return FloatingActionButton(
+      onPressed: _navigateToNewPost,
+      tooltip: 'Create new post',
+      child: const Icon(Icons.add),
+    );
+  }
+
+  void _navigateToNewPost() async {
+    final result = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => NewPostPage(feedBloc: _feedBloc),
+      ),
+    );
+
+    // Note: With optimistic updates, we don't need to refresh the feed
+    // The optimistic post is already added and will be replaced with the real post
+    // Only refresh if there was an error and we need to sync
+    if (result == false) {
+      _feedBloc.add(const FeedRefreshed());
+    }
   }
 }
 

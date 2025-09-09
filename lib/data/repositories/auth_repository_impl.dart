@@ -32,18 +32,23 @@ class AuthRepositoryImpl implements AuthRepository {
     required String password,
   }) async {
     try {
-      // Check network connectivity
-      if (!await networkInfo.isConnected) {
+      // Check network connectivity - but allow demo credentials to proceed for fallback
+      final isDemoCredentials = email.toLowerCase() == 'eve.holt@reqres.in' && password == 'cityslicka';
+      if (!await networkInfo.isConnected && !isDemoCredentials) {
         return failure(const NetworkFailure('No internet connection'));
       }
 
       // Attempt login with remote data source
+      print('[REPO DEBUG] Calling remote data source login for: $email');
       final loginResult = await remoteDataSource.login(
         email: email,
         password: password,
       );
 
+      print('[REPO DEBUG] Login result - Success: ${loginResult.isSuccess}, Failure: ${loginResult.isFailure}');
+      
       if (loginResult.isFailure) {
+        print('[REPO DEBUG] Login failed with: ${loginResult.failureValue}');
         return failure(loginResult.failureValue!);
       }
 

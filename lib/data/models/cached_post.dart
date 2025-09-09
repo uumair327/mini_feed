@@ -220,7 +220,15 @@ class CachedPost extends HiveObject {
 
   /// Check if sync should be retried
   bool shouldRetrySync({int maxAttempts = 3}) {
-    return needsSync && syncAttempts < maxAttempts;
+    if (!needsSync) return false;
+    if (syncAttempts >= maxAttempts) return false;
+    
+    // Don't retry if the last attempt was too recent (less than 5 minutes ago)
+    if (syncError != null && cacheAgeInMinutes < 5) {
+      return false;
+    }
+    
+    return true;
   }
 
   /// Get cache age in minutes

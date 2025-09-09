@@ -3,11 +3,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../blocs/auth/auth_bloc.dart';
 import '../../blocs/auth/auth_event.dart';
 import '../../blocs/auth/auth_state.dart';
-import '../../widgets/common/loading_indicators.dart';
 import '../../widgets/common/error_widgets.dart';
 import '../../widgets/common/app_buttons.dart';
 import '../../widgets/common/accessibility_widgets.dart';
 import '../../widgets/common/responsive_layout.dart';
+import '../../widgets/common/offline_indicators.dart';
 import '../../theme/app_breakpoints.dart';
 import '../../routes/app_router.dart';
 
@@ -45,44 +45,46 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: ResponsiveContainer(
-        child: BlocConsumer<AuthBloc, AuthState>(
-          listener: (context, state) {
-            if (state is AuthFailure) {
-              ErrorSnackBar.show(
-                context,
-                message: state.message,
-              );
-            } else if (state is AuthSuccess) {
-              AppNavigation.toFeed(context);
-            }
-          },
-          builder: (context, state) {
-            return SafeArea(
-              child: Padding(
-                padding: EdgeInsets.all(
-                  AppBreakpoints.isMobile(context) ? 16.0 : 24.0,
-                ),
-                child: Center(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildHeader(),
-                        const SizedBox(height: 48),
-                        _buildLoginForm(state),
-                        const SizedBox(height: 24),
-                        _buildLoginButton(state),
-                        const SizedBox(height: 16),
-                        _buildDemoCredentials(),
-                      ],
+      body: OfflineBanner(
+        child: ResponsiveContainer(
+          child: BlocConsumer<AuthBloc, AuthState>(
+            listener: (context, state) {
+              if (state is AuthFailure) {
+                ErrorSnackBar.show(
+                  context,
+                  message: state.message,
+                );
+              } else if (state is AuthSuccess) {
+                AppNavigation.toFeed(context);
+              }
+            },
+            builder: (context, state) {
+              return SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.all(
+                    AppBreakpoints.isMobile(context) ? 16.0 : 24.0,
+                  ),
+                  child: Center(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildHeader(),
+                          const SizedBox(height: 48),
+                          _buildLoginForm(state),
+                          const SizedBox(height: 24),
+                          _buildLoginButton(state),
+                          const SizedBox(height: 16),
+                          _buildDemoCredentials(),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );

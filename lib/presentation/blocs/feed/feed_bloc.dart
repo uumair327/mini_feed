@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/utils/logger.dart';
 import '../../../core/utils/result.dart';
+import '../../../core/error_handling/global_error_handler.dart';
+
 import '../../../domain/entities/post.dart';
 import '../../../domain/usecases/posts/get_posts_usecase.dart';
 import '../../../domain/usecases/posts/search_posts_usecase.dart';
@@ -26,6 +28,9 @@ class FeedBloc extends Bloc<FeedEvent, FeedState> {
     on<FeedSearchChanged>(_onFeedSearchChanged);
     on<FeedSearchCleared>(_onFeedSearchCleared);
     on<FeedRetryRequested>(_onFeedRetryRequested);
+    on<OptimisticPostAdded>(_onOptimisticPostAdded);
+    on<OptimisticPostReplaced>(_onOptimisticPostReplaced);
+    on<OptimisticPostRemoved>(_onOptimisticPostRemoved);
   }
 
   @override
@@ -64,16 +69,20 @@ class FeedBloc extends Bloc<FeedEvent, FeedState> {
         }
       } else {
         final failure = result.failureValue!;
-        Logger.error('Failed to load feed: ${failure.message}');
+        GlobalErrorHandler.logError('Failed to load feed', failure);
         emit(FeedError(
-          message: failure.message,
+          message: _getUserFriendlyMessage(failure),
           details: failure.toString(),
+          canRetry: _isRetryableFailure(failure),
         ));
       }
     } catch (e) {
-      Logger.error('Unexpected error loading feed', e);
-      emit(const FeedError(
-        message: 'An unexpected error occurred while loading the feed',
+      final failure = GlobalErrorHandler.handleException(e);
+      GlobalErrorHandler.logError('Unexpected error loading feed', e);
+      emit(FeedError(
+        message: _getUserFriendlyMessage(failure),
+        details: e.toString(),
+        canRetry: _isRetryableFailure(failure),
       ));
     }
   }
@@ -299,5 +308,116 @@ class FeedBloc extends Bloc<FeedEvent, FeedState> {
       // Retry normal feed load
       add(const FeedRequested());
     }
+  }
+
+  Future<void> _onOptimisticPostAdded(
+    OptimisticPostAdded event,
+    Emitter<FeedState> emit,
+  ) async {
+    final currentState = state;
+    
+    Logger.info('Adding optimistic post: "${event.optimisticPost.title}"');
+    
+    if (currentState is FeedLoaded) {
+      // Add optimistic post to the beginning of the list
+      final updatedPosts = [event.optimisticPost, ...currentState.posts];
+      
+      emit(currentState.copyWith(
+        posts: updatedPosts,
+      ));
+    } else if (currentState is FeedEmpty) {
+      // If feed was empty, create a new loaded state with the optimistic post
+      emit(FeedLoaded(
+        posts: [event.optimisticPost],
+        hasReachedMax: true,
+        currentPage: 1,
+      ));
+    }
+    // If feed is in other states (loading, error), we don't add optimistic posts
+  }
+
+  Future<void> _onOptimisticPostReplaced(
+    OptimisticPostReplaced event,
+    Emitter<FeedState> emit,
+  ) async {
+    final currentState = state;
+    
+    Logger.info('Replacing optimistic post ${event.optimisticPost.id} with real post ${event.realPost.id}');
+    
+    if (currentState is FeedLoaded) {
+      // Find and replace the optimistic post with the real post
+      final updatedPosts = currentState.posts.map((post) {
+        if (post.id == event.optimisticPost.id && post.isOptimistic) {
+          return event.realPost;
+        }
+        return post;
+      }).toList();
+      
+      emit(currentState.copyWith(
+        posts: updatedPosts,
+      ));
+    }
+  }
+
+  Future<void> _onOptimisticPostRemoved(
+    OptimisticPostRemoved event,
+    Emitter<FeedState> emit,
+  ) async {
+    final currentState = state;
+    
+    Logger.info('Removing failed optimistic post: ${event.optimisticPost.id}');
+    
+    if (currentState is FeedLoaded) {
+      // Remove the optimistic post from the list
+      final updatedPosts = currentState.posts
+          .where((post) => !(post.id == event.optimisticPost.id && post.isOptimistic))
+          .toList();
+      
+      if (updatedPosts.isEmpty) {
+        emit(const FeedEmpty());
+      } else {
+        emit(currentState.copyWith(
+          posts: updatedPosts,
+        ));
+      }
+    }
+  }
+
+  /// Get user-friendly error message from failure
+  String _getUserFriendlyMessage(dynamic failure) {
+    if (failure.toString().toLowerCase().contains('network') ||
+        failure.toString().toLowerCase().contains('internet') ||
+        failure.toString().toLowerCase().contains('connection')) {
+      return 'Please check your internet connection and try again.';
+    } else if (failure.toString().toLowerCase().contains('timeout')) {
+      return 'The request is taking too long. Please try again.';
+    } else if (failure.toString().toLowerCase().contains('server')) {
+      return 'Server is temporarily unavailable. Please try again later.';
+    } else {
+      return 'Something went wrong. Please try again.';
+    }
+  }
+
+  /// Check if a failure is retryable
+  bool _isRetryableFailure(dynamic failure) {
+    final failureString = failure.toString().toLowerCase();
+    
+    // Network-related failures are usually retryable
+    if (failureString.contains('network') ||
+        failureString.contains('timeout') ||
+        failureString.contains('connection') ||
+        failureString.contains('server')) {
+      return true;
+    }
+    
+    // Auth failures are not retryable
+    if (failureString.contains('auth') ||
+        failureString.contains('unauthorized') ||
+        failureString.contains('forbidden')) {
+      return false;
+    }
+    
+    // Default to retryable
+    return true;
   }
 }

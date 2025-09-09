@@ -3,12 +3,18 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:mini_feed/core/storage/storage_initializer.dart';
 import 'package:mini_feed/presentation/blocs/auth/auth_bloc.dart';
 import 'package:mini_feed/presentation/blocs/auth/auth_event.dart';
+import 'package:mini_feed/presentation/blocs/connectivity/connectivity_cubit.dart';
 import 'package:mini_feed/presentation/routes/app_router.dart';
 import 'package:mini_feed/presentation/theme/app_theme.dart';
 import 'package:mini_feed/core/di/injection_container.dart' as di;
+import 'package:mini_feed/core/sync/sync_service.dart';
+import 'package:mini_feed/core/error_handling/global_error_handler.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize global error handling
+  GlobalErrorHandler.initialize();
   
   // Initialize storage
   await StorageInitializer.initialize();
@@ -29,6 +35,17 @@ class MyApp extends StatelessWidget {
         BlocProvider<AuthBloc>(
           create: (context) => di.sl<AuthBloc>()
             ..add(const AuthStatusChecked()),
+        ),
+        BlocProvider<ConnectivityCubit>(
+          create: (context) {
+            // Initialize sync service
+            final syncService = di.sl<SyncService>();
+            syncService.initialize();
+            syncService.startAutoSync();
+            
+            return di.sl<ConnectivityCubit>()
+              ..initialize();
+          },
         ),
       ],
       child: MaterialApp(

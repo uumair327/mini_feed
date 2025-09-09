@@ -1,9 +1,12 @@
 import 'package:get_it/get_it.dart';
+import 'package:mini_feed/core/constants/api_constants.dart';
 import 'package:mini_feed/core/network/network_client.dart';
 import 'package:mini_feed/core/network/network_info.dart';
 import 'package:mini_feed/core/network/connectivity_checker.dart';
 import 'package:mini_feed/core/storage/storage_service.dart';
 import 'package:mini_feed/core/storage/token_storage.dart';
+import 'package:mini_feed/core/sync/sync_service.dart';
+import 'package:mini_feed/core/error_handling/error_reporter.dart';
 import 'package:mini_feed/data/datasources/remote/auth_remote_datasource.dart';
 import 'package:mini_feed/data/datasources/remote/post_remote_datasource.dart';
 import 'package:mini_feed/data/repositories/auth_repository_impl.dart';
@@ -16,6 +19,7 @@ import 'package:mini_feed/domain/usecases/auth/login_usecase.dart';
 import 'package:mini_feed/domain/usecases/auth/logout_usecase.dart';
 import 'package:mini_feed/presentation/blocs/auth/auth_bloc.dart';
 import 'package:mini_feed/presentation/blocs/feed/feed_bloc.dart';
+import 'package:mini_feed/presentation/blocs/connectivity/connectivity_cubit.dart';
 import 'package:mini_feed/domain/usecases/posts/get_posts_usecase.dart';
 import 'package:mini_feed/domain/usecases/posts/search_posts_usecase.dart';
 
@@ -37,6 +41,13 @@ Future<void> init() async {
     () => FeedBloc(
       getPostsUseCase: sl(),
       searchPostsUseCase: sl(),
+    ),
+  );
+
+  sl.registerLazySingleton(
+    () => ConnectivityCubit(
+      networkInfo: sl(),
+      syncService: sl(),
     ),
   );
 
@@ -71,17 +82,32 @@ Future<void> init() async {
 
   // Data Sources
   sl.registerLazySingleton<AuthRemoteDataSource>(
-    () => AuthRemoteDataSourceImpl(sl()),
+    () => AuthRemoteDataSourceImpl(sl(instanceName: 'authNetworkClient')),
   );
 
   sl.registerLazySingleton<PostRemoteDataSource>(
-    () => PostRemoteDataSourceImpl(sl()),
+    () => PostRemoteDataSourceImpl(sl(instanceName: 'postNetworkClient')),
   );
 
   // Core Services
-  sl.registerLazySingleton<NetworkClient>(() => NetworkClient());
+  sl.registerLazySingleton<NetworkClient>(
+    () => NetworkClient(baseUrl: ApiConstants.authBaseUrl),
+    instanceName: 'authNetworkClient',
+  );
+  sl.registerLazySingleton<NetworkClient>(
+    () => NetworkClient(baseUrl: ApiConstants.baseUrl),
+    instanceName: 'postNetworkClient',
+  );
   sl.registerLazySingleton<ConnectivityChecker>(() => ConnectivityChecker());
   sl.registerLazySingleton<StorageService>(() => StorageServiceImpl());
   sl.registerLazySingleton<TokenStorage>(() => TokenStorageImpl(sl()));
   sl.registerLazySingleton<NetworkInfo>(() => NetworkInfoImpl(sl()));
+  sl.registerLazySingleton<SyncService>(() => SyncServiceImpl(
+    networkInfo: sl(),
+    storageService: sl(),
+    postRemoteDataSource: sl(),
+  ));
+  sl.registerLazySingleton<ErrorReporter>(() => ErrorReporterImpl(
+    storageService: sl(),
+  ));
 }

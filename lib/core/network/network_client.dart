@@ -8,14 +8,16 @@ import 'network_interceptor.dart';
 /// Network client using Dio for HTTP requests
 class NetworkClient {
   late final Dio _dio;
+  final String? baseUrl;
   
-  NetworkClient() {
+  NetworkClient({this.baseUrl}) {
     _dio = Dio(_getBaseOptions());
     _setupInterceptors();
   }
   
   /// Get base options for Dio configuration
   BaseOptions _getBaseOptions() => BaseOptions(
+        baseUrl: baseUrl ?? ApiConstants.authBaseUrl, // Use provided base URL or default to auth
         connectTimeout: const Duration(
           milliseconds: ApiConstants.connectTimeout,
         ),

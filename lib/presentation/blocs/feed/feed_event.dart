@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import '../../../domain/entities/post.dart';
 
 abstract class FeedEvent extends Equatable {
   const FeedEvent();
@@ -49,4 +50,42 @@ class FeedSearchCleared extends FeedEvent {
 /// Event to retry after an error
 class FeedRetryRequested extends FeedEvent {
   const FeedRetryRequested();
+}
+
+/// Event to add an optimistic post to the feed
+class OptimisticPostAdded extends FeedEvent {
+  final Post optimisticPost;
+
+  const OptimisticPostAdded({
+    required this.optimisticPost,
+  });
+
+  @override
+  List<Object?> get props => [optimisticPost];
+}
+
+/// Event to replace optimistic post with real post
+class OptimisticPostReplaced extends FeedEvent {
+  final Post optimisticPost;
+  final Post realPost;
+
+  const OptimisticPostReplaced({
+    required this.optimisticPost,
+    required this.realPost,
+  });
+
+  @override
+  List<Object?> get props => [optimisticPost, realPost];
+}
+
+/// Event to remove optimistic post on failure
+class OptimisticPostRemoved extends FeedEvent {
+  final Post optimisticPost;
+
+  const OptimisticPostRemoved({
+    required this.optimisticPost,
+  });
+
+  @override
+  List<Object?> get props => [optimisticPost];
 }
