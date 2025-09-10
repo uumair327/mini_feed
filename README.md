@@ -37,32 +37,74 @@ A modern Flutter application that provides a social media feed experience with o
 
 This application follows Clean Architecture principles with clear separation of concerns:
 
+### Clean Architecture Layers
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    PRESENTATION LAYER                       │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │   Pages     │  │   Widgets   │  │      BLoCs          │  │
+│  │             │  │             │  │   (State Mgmt)      │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     DOMAIN LAYER                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │  Entities   │  │  Use Cases  │  │   Repository        │  │
+│  │             │  │             │  │   Interfaces        │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      DATA LAYER                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │ Repository  │  │    Models   │  │   Data Sources      │  │
+│  │    Impl     │  │             │  │  Remote │ Local     │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      CORE LAYER                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
+│  │   Network   │  │   Storage   │  │    Utilities        │  │
+│  │   Clients   │  │  Services   │  │  DI │ Errors │ Sync │  │
+│  └─────────────┘  └─────────────┘  └─────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Project Structure
+
 ```
 lib/
 ├── core/                   # Core utilities and services
-│   ├── di/                # Dependency injection
-│   ├── errors/            # Error handling
-│   ├── network/           # Network services
-│   ├── storage/           # Local storage
+│   ├── di/                # Dependency injection (GetIt)
+│   ├── errors/            # Error handling & exceptions
+│   ├── network/           # Network clients & interceptors
+│   ├── storage/           # Local storage (Hive, SharedPrefs)
 │   ├── sync/              # Background synchronization
 │   └── utils/             # Utilities and helpers
-├── data/                  # Data layer
-│   ├── datasources/       # Remote and local data sources
-│   ├── models/            # Data models
-│   └── repositories/      # Repository implementations
-├── domain/                # Domain layer
-│   ├── entities/          # Business entities
-│   ├── repositories/      # Repository interfaces
-│   └── usecases/          # Business logic
-└── presentation/          # Presentation layer
-    ├── blocs/             # State management (BLoC)
-    ├── pages/             # UI screens
+├── data/                  # Data layer implementation
+│   ├── datasources/       # Remote (API) & local data sources
+│   ├── models/            # Data models with JSON serialization
+│   └── repositories/      # Repository pattern implementations
+├── domain/                # Business logic layer
+│   ├── entities/          # Core business entities
+│   ├── repositories/      # Repository contracts/interfaces
+│   └── usecases/          # Business use cases
+└── presentation/          # UI layer
+    ├── blocs/             # State management (BLoC pattern)
+    ├── pages/             # Screen implementations
     ├── widgets/           # Reusable UI components
-    ├── routes/            # Navigation
-    └── theme/             # Theming
+    ├── routes/            # Navigation configuration
+    └── theme/             # App theming & styling
 ```
 
-### Key Design Patterns
+### Key Design Patterns & Principles
+
 - **Clean Architecture**: Separation of concerns with dependency inversion
 - **BLoC Pattern**: Reactive state management with flutter_bloc
 - **Repository Pattern**: Data access abstraction with multiple data sources
@@ -70,36 +112,259 @@ lib/
 - **Result Pattern**: Functional error handling with comprehensive failure types
 - **Network Abstraction**: Separate network clients for different APIs
 - **Fallback Strategy**: Mock authentication for reliable demo experience
+- **SOLID Principles**: Single responsibility, open/closed, dependency inversion
+- **Offline-First**: Local storage with background synchronization
+
+## Design Decisions & Trade-offs
+
+### Architecture Decisions
+
+#### ✅ **Clean Architecture**
+- **Decision**: Implemented strict layer separation with dependency inversion
+- **Benefits**: Testable, maintainable, scalable codebase
+- **Trade-off**: More boilerplate code, steeper learning curve
+- **Rationale**: Long-term maintainability over short-term development speed
+
+#### ✅ **BLoC Pattern for State Management**
+- **Decision**: Used flutter_bloc for reactive state management
+- **Benefits**: Predictable state changes, excellent testing support, separation of business logic
+- **Trade-off**: More complex than setState, requires understanding of streams
+- **Rationale**: Scalability and testability requirements outweigh complexity
+
+#### ✅ **Dual API Strategy**
+- **Decision**: Separate network clients for authentication (ReqRes) and content (JSONPlaceholder)
+- **Benefits**: Realistic API integration, demonstrates real-world scenarios
+- **Trade-off**: More complex network setup, potential for API inconsistencies
+- **Rationale**: Better demonstration of production-like architecture
+
+#### ✅ **Result Pattern for Error Handling**
+- **Decision**: Functional error handling with Result<Success, Failure> pattern
+- **Benefits**: Explicit error handling, no exceptions in business logic, type-safe
+- **Trade-off**: More verbose than try-catch, requires understanding of functional concepts
+- **Rationale**: Predictable error handling and better user experience
+
+#### ✅ **Offline-First Approach**
+- **Decision**: Local storage with background synchronization
+- **Benefits**: Works without internet, better user experience, data persistence
+- **Trade-off**: Complex synchronization logic, potential data conflicts
+- **Rationale**: Modern mobile apps require offline capabilities
+
+### Technical Trade-offs
+
+#### **Performance vs Features**
+- **Chosen**: Feature completeness with performance optimization
+- **Impact**: Comprehensive caching, optimistic updates, background sync
+- **Alternative**: Simpler implementation with basic functionality
+
+#### **Type Safety vs Development Speed**
+- **Chosen**: Strong typing with code generation
+- **Impact**: JSON serialization, sealed classes, comprehensive error types
+- **Alternative**: Dynamic typing with faster prototyping
+
+#### **Testing Coverage vs Development Time**
+- **Chosen**: Comprehensive testing (unit, widget, integration)
+- **Impact**: 300+ tests covering all layers
+- **Alternative**: Basic testing with faster delivery
+
+## Known Limitations
+
+### Current Limitations
+
+#### **API Dependencies**
+- **ReqRes API**: Demo API with limited functionality, may have availability issues
+- **JSONPlaceholder**: Read-only API, post creation is simulated
+- **Mitigation**: Automatic fallback to mock authentication, local storage for offline functionality
+
+#### **Real-time Features**
+- **Missing**: Real-time notifications, live updates, WebSocket connections
+- **Impact**: Users need to manually refresh for new content
+- **Future**: Could be implemented with WebSocket or Server-Sent Events
+
+#### **Advanced Search**
+- **Current**: Basic text search through cached posts
+- **Missing**: Advanced filters, search by user, date ranges, tags
+- **Impact**: Limited search capabilities for large datasets
+
+#### **Media Handling**
+- **Current**: Basic image display from URLs
+- **Missing**: Image upload, video support, image editing
+- **Impact**: Limited rich media functionality
+
+#### **Social Features**
+- **Missing**: User profiles, following/followers, direct messaging
+- **Impact**: Basic social interaction compared to full social media apps
+
+### Technical Limitations
+
+#### **Synchronization**
+- **Current**: Simple background sync with basic conflict resolution
+- **Missing**: Advanced conflict resolution, operational transforms
+- **Impact**: Potential data loss in complex offline scenarios
+
+#### **Caching Strategy**
+- **Current**: Time-based cache expiration
+- **Missing**: Smart cache invalidation, cache size management
+- **Impact**: Potential stale data or excessive storage usage
+
+#### **Error Recovery**
+- **Current**: Retry mechanisms with exponential backoff
+- **Missing**: Advanced error recovery, partial failure handling
+- **Impact**: Some edge cases may not be handled optimally
+
+### Platform Limitations
+
+#### **Mobile-First Design**
+- **Current**: Responsive design with mobile priority
+- **Missing**: Desktop-specific features, advanced keyboard shortcuts
+- **Impact**: Suboptimal experience on desktop platforms
+
+#### **Accessibility**
+- **Current**: Basic accessibility support
+- **Missing**: Advanced screen reader features, voice commands
+- **Impact**: May not meet all accessibility standards
+
+## Future Enhancements
+
+### If More Time Was Available
+
+#### **High Priority Features**
+- **Push Notifications**: Real-time notifications for new posts, comments, likes
+- **Advanced Search**: Filters by user, date, tags, content type
+- **User Profiles**: Detailed user pages with bio, posts history, followers
+- **Rich Media**: Image upload, video support, image editing capabilities
+- **Real-time Updates**: WebSocket integration for live feed updates
+
+#### **Medium Priority Features**
+- **Social Features**: Following/followers system, direct messaging
+- **Content Management**: Post editing, deletion, draft saving
+- **Advanced Caching**: Smart cache invalidation, storage optimization
+- **Analytics**: User engagement tracking, performance metrics
+- **Internationalization**: Multi-language support with localization
+
+#### **Low Priority Features**
+- **Advanced Theming**: Custom themes, theme marketplace
+- **Plugins System**: Extensible architecture for third-party features
+- **Advanced Offline**: Conflict resolution, operational transforms
+- **Desktop Features**: Keyboard shortcuts, multi-window support
+- **Advanced Accessibility**: Voice commands, gesture navigation
+
+### Technical Improvements
+
+#### **Performance Optimizations**
+- **Image Optimization**: WebP support, progressive loading, lazy loading
+- **Bundle Optimization**: Code splitting, tree shaking improvements
+- **Memory Management**: Better disposal patterns, memory leak detection
+- **Network Optimization**: Request batching, GraphQL integration
+
+#### **Developer Experience**
+- **CI/CD Pipeline**: Automated testing, deployment, code quality checks
+- **Documentation**: API documentation, architecture decision records
+- **Monitoring**: Crash reporting, performance monitoring, user analytics
+- **Testing**: Visual regression testing, automated UI testing
+
+#### **Production Readiness**
+- **Security**: API key management, data encryption, secure storage
+- **Scalability**: Database optimization, CDN integration, caching strategies
+- **Monitoring**: Health checks, logging, error tracking
+- **Deployment**: Multi-environment setup, feature flags, A/B testing
 
 ## Getting Started
 
 ### Prerequisites
-- Flutter SDK (3.0.0 or higher)
-- Dart SDK (2.17.0 or higher)
-- Android Studio / VS Code with Flutter extensions
-- Git
 
-### Installation
+#### **Required Software**
+- **Flutter SDK**: 3.0.0 or higher
+- **Dart SDK**: 2.17.0 or higher (included with Flutter)
+- **Git**: For version control
+- **IDE**: Android Studio, VS Code, or IntelliJ IDEA
 
-1. **Clone the repository**
+#### **Platform-Specific Requirements**
+
+**For Android Development:**
+- Android Studio with Android SDK
+- Android device or emulator (API level 21+)
+- Java Development Kit (JDK) 11 or higher
+
+**For iOS Development (macOS only):**
+- Xcode 13.0 or higher
+- iOS device or simulator (iOS 11.0+)
+- CocoaPods (installed via `sudo gem install cocoapods`)
+
+**For Web Development:**
+- Chrome browser for debugging
+- Web server for deployment (optional)
+
+### Quick Setup (5 minutes)
+
+1. **Verify Flutter Installation**
+   ```bash
+   flutter doctor
+   # Ensure all checkmarks are green
+   ```
+
+2. **Clone and Setup**
+   ```bash
+   git clone <repository-url>
+   cd mini_feed
+   flutter pub get
+   ```
+
+3. **Run the App**
+   ```bash
+   # For mobile (Android/iOS)
+   flutter run
+   
+   # For web
+   flutter run -d chrome
+   
+   # For desktop
+   flutter run -d windows  # or macos, linux
+   ```
+
+### Detailed Installation
+
+1. **Clone the Repository**
    ```bash
    git clone <repository-url>
    cd mini_feed
    ```
 
-2. **Install dependencies**
+2. **Install Dependencies**
    ```bash
    flutter pub get
    ```
 
-3. **Generate code**
+3. **Generate Code (if needed)**
    ```bash
+   # Generate JSON serialization and other generated code
    flutter packages pub run build_runner build
+   
+   # If you encounter conflicts
+   flutter packages pub run build_runner build --delete-conflicting-outputs
    ```
 
-4. **Run the app**
+4. **Verify Setup**
    ```bash
-   flutter run
+   # Check for any issues
+   flutter analyze
+   
+   # Run tests to ensure everything works
+   flutter test
+   ```
+
+5. **Run the Application**
+   ```bash
+   # List available devices
+   flutter devices
+   
+   # Run on specific device
+   flutter run -d <device-id>
+   
+   # Run in debug mode with hot reload
+   flutter run --debug
+   
+   # Run in release mode for performance testing
+   flutter run --release
    ```
 
 ### Development Setup
